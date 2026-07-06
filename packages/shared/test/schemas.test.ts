@@ -34,6 +34,28 @@ describe('createJobSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts postprocess variants and output format', () => {
+    const parsed = createJobSchema.parse({
+      brief: '一把火焰魔法剑',
+      assetType: 'icon',
+      style: 'pixel-art',
+      provider: 'mock',
+      postprocess: { variants: [0.5, 2], format: 'webp' },
+    });
+    expect(parsed.postprocess).toEqual({ variants: [0.5, 2], format: 'webp' });
+  });
+
+  it('normalizes draft postprocess fields for compatibility', () => {
+    const parsed = createJobSchema.parse({
+      brief: '一把火焰魔法剑',
+      assetType: 'icon',
+      style: 'pixel-art',
+      provider: 'mock',
+      postprocess: { scales: [0.5], webp: true },
+    });
+    expect(parsed.postprocess).toEqual({ variants: [0.5], format: 'webp' });
+  });
 });
 
 describe('presets', () => {

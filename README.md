@@ -79,6 +79,7 @@ npm start       # 服务端在 8787 同时托管 API 与前端静态文件
 
 - [架构设计](docs/ARCHITECTURE.md) —— 分层、多智能体流水线、扩展新 Provider 的方法
 - [API 参考](docs/API.md) —— REST + SSE 端点
+- [后续开发路线图](docs/ROADMAP.md) —— v0.2–v0.6 功能规划、优先级与实施顺序
 
 ## License
 

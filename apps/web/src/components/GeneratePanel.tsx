@@ -23,6 +23,9 @@ export function GeneratePanel({ providers }: Props) {
   const [height, setHeight] = useState(ASSET_TYPE_META.sprite.defaultSize.height);
   const [negativePrompt, setNegativePrompt] = useState('');
   const [maxRetries, setMaxRetries] = useState(1);
+  const [postprocessEnabled, setPostprocessEnabled] = useState(false);
+  const [variantScales, setVariantScales] = useState<number[]>([0.5, 2]);
+  const [postprocessFormat, setPostprocessFormat] = useState<'original' | 'png' | 'webp'>('webp');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -36,6 +39,12 @@ export function GeneratePanel({ providers }: Props) {
     setAssetType(next);
     setWidth(ASSET_TYPE_META[next].defaultSize.width);
     setHeight(ASSET_TYPE_META[next].defaultSize.height);
+  };
+
+  const toggleVariantScale = (scale: number) => {
+    setVariantScales((prev) =>
+      prev.includes(scale) ? prev.filter((s) => s !== scale) : [...prev, scale].sort(),
+    );
   };
 
   const submit = async () => {
@@ -57,6 +66,14 @@ export function GeneratePanel({ providers }: Props) {
         height,
         ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
         maxRetries,
+        ...(postprocessEnabled && providers.postprocess.available
+          ? {
+              postprocess: {
+                ...(variantScales.length > 0 ? { variants: variantScales } : {}),
+                ...(postprocessFormat !== 'original' ? { format: postprocessFormat } : {}),
+              },
+            }
+          : {}),
       });
       setActiveJobId(job.id);
     } catch (err) {
@@ -189,6 +206,51 @@ export function GeneratePanel({ providers }: Props) {
             onChange={(e) => setNegativePrompt(e.target.value)}
           />
         </label>
+
+        <div className="postprocess-box">
+          <label className="checkbox-line">
+            <input
+              type="checkbox"
+              checked={postprocessEnabled}
+              disabled={!providers.postprocess.available}
+              onChange={(e) => setPostprocessEnabled(e.target.checked)}
+            />
+            <span>生成可用变体</span>
+          </label>
+          {providers.postprocess.available ? (
+            postprocessEnabled && (
+              <div className="postprocess-controls">
+                <div className="checkbox-group">
+                  {[0.5, 1, 2].map((scale) => (
+                    <label key={scale} className="checkbox-line compact">
+                      <input
+                        type="checkbox"
+                        checked={variantScales.includes(scale)}
+                        onChange={() => toggleVariantScale(scale)}
+                      />
+                      <span>@{scale}x</span>
+                    </label>
+                  ))}
+                </div>
+                <label>
+                  额外格式
+                  <select
+                    value={postprocessFormat}
+                    onChange={(e) =>
+                      setPostprocessFormat(e.target.value as 'original' | 'png' | 'webp')
+                    }
+                  >
+                    <option value="webp">WebP</option>
+                    <option value="png">PNG</option>
+                    <option value="original">保持原格式</option>
+                  </select>
+                </label>
+              </div>
+            )
+          ) : (
+            <p className="hint">后处理引擎未可用，安装可选依赖 sharp 后可生成尺寸变体与 WebP。</p>
+          )}
+        </div>
 
         {provider?.note && <p className="hint">{provider.note}</p>}
         {error && <div className="alert error">{error}</div>}

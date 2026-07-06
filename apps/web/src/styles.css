@@ -231,6 +231,45 @@ label.full {
   margin-top: 12px;
 }
 
+.checkbox-line {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.checkbox-line input {
+  width: auto;
+  margin: 0;
+}
+
+.checkbox-line.compact {
+  color: var(--text-muted);
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.postprocess-box {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(20, 25, 38, 0.72);
+}
+
+.postprocess-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 220px);
+  align-items: end;
+  gap: 14px;
+  margin-top: 10px;
+}
+
 button {
   background: var(--bg-soft);
   color: var(--text);
@@ -245,6 +284,11 @@ button {
 
 button:hover {
   border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 button.primary {
@@ -355,6 +399,10 @@ button.danger:hover {
   border-left-color: var(--accent);
 }
 
+.progress-item.stage-postprocess {
+  border-left-color: var(--warn);
+}
+
 .stage-time {
   color: var(--text-muted);
   font-size: 12px;
@@ -366,7 +414,16 @@ button.danger:hover {
 }
 
 .result-title {
+  margin: 0;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 22px 0 12px;
+  flex-wrap: wrap;
 }
 
 /* ---------- assets ---------- */
@@ -377,6 +434,7 @@ button.danger:hover {
 }
 
 .asset-card {
+  position: relative;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -397,6 +455,23 @@ button.danger:hover {
   aspect-ratio: 1 / 1;
   object-fit: contain;
   background: repeating-conic-gradient(#181e2b 0% 25%, #10141f 0% 50%) 0 0 / 22px 22px;
+}
+
+.asset-select {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  width: auto;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(13, 16, 23, 0.78);
+  border: 1px solid var(--border);
+}
+
+.asset-select input {
+  width: auto;
+  margin: 0;
 }
 
 .asset-meta {
@@ -435,6 +510,23 @@ button.danger:hover {
   font-size: 13px;
 }
 
+.variant-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.variant-links a {
+  color: var(--ok);
+  background: rgba(63, 207, 142, 0.1);
+  border: 1px solid rgba(63, 207, 142, 0.24);
+  border-radius: 999px;
+  padding: 3px 8px;
+  text-decoration: none;
+  font-size: 12px;
+}
+
 .download:hover {
   text-decoration: underline;
 }
@@ -451,11 +543,29 @@ button.danger:hover {
 
 .toolbar-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .toolbar-actions select {
   width: auto;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-soft);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 16px;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.button-link:hover {
+  border-color: var(--accent);
 }
 
 /* ---------- system ---------- */
@@ -518,4 +628,21 @@ button.danger:hover {
   color: var(--text-muted);
   font-size: 12.5px;
   text-align: center;
+}
+
+@media (max-width: 560px) {
+  .postprocess-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+  }
+
+  .toolbar-actions select,
+  .toolbar-actions button,
+  .button-link {
+    flex: 1;
+    min-width: 140px;
+  }
 }

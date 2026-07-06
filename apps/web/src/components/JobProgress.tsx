@@ -21,6 +21,7 @@ const STAGE_ICON: Record<string, string> = {
   prompt: '✍️',
   generate: '🎨',
   review: '🔍',
+  postprocess: '🧩',
   retry: '♻️',
   save: '💾',
   done: '✅',
@@ -85,7 +86,12 @@ export function JobProgress({ jobId }: Props) {
 
       {assets.length > 0 && (
         <>
-          <h3 className="result-title">产出素材（{assets.length}）</h3>
+          <div className="result-header">
+            <h3 className="result-title">产出素材（{assets.length}）</h3>
+            <a className="button-link" href={api.exportJobUrl(jobId)} download>
+              导出本任务
+            </a>
+          </div>
           <div className="asset-grid">
             {assets.map((asset) => (
               <div key={asset.id} className="asset-card">
@@ -101,6 +107,15 @@ export function JobProgress({ jobId }: Props) {
                   <a className="download" href={`/files/${asset.fileName}`} download>
                     ⬇ 下载
                   </a>
+                  {asset.variants?.length ? (
+                    <div className="variant-links">
+                      {asset.variants.map((variant) => (
+                        <a key={variant.fileName} href={`/files/${variant.fileName}`} download>
+                          {variant.label}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}

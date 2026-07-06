@@ -53,6 +53,18 @@ export function ProviderStatus({ providers }: Props) {
         )}
       </div>
 
+      <h3 className="section-title">后处理</h3>
+      <div className="card llm-card">
+        <p>
+          <span className={`badge ${providers.postprocess.available ? 'ok' : 'off'}`}>
+            {providers.postprocess.available ? '可用' : '未启用'}
+          </span>
+          {providers.postprocess.available
+            ? '已启用 sharp，可生成尺寸变体、PNG/WebP 副本与导出包。'
+            : '未安装可选依赖 sharp，生成主图不受影响，后处理选项会隐藏。'}
+        </p>
+      </div>
+
       <h3 className="section-title">图像生成引擎</h3>
       <div className="provider-grid">
         {providers.imageProviders.map((p) => (

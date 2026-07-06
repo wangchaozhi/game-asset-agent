@@ -4,6 +4,7 @@ import type { Store } from '../db/store.js';
 import type { JobEventBus } from '../events.js';
 import type { ProviderRegistry } from '../imagegen/registry.js';
 import type { LlmClient } from '../llm/types.js';
+import { postprocessAsset } from '../postprocess/index.js';
 import type { FileStorage } from '../storage/files.js';
 import { reviewAsset } from './critic.js';
 import { planAssets } from './director.js';
@@ -135,6 +136,18 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
           // 落盘 + 建档
           const assetId = randomUUID();
           const saved = await storage.save(assetId, result.format, result.data);
+          const postprocessed = await postprocessAsset({
+            assetId,
+            request,
+            result,
+            storage,
+          });
+          if (postprocessed.skippedReason) {
+            log('postprocess', postprocessed.skippedReason, i);
+          } else if (postprocessed.variants.length > 0) {
+            log('postprocess', `已生成 ${postprocessed.variants.length} 个后处理变体`, i);
+          }
+
           const record: AssetRecord = {
             id: assetId,
             jobId,
@@ -152,6 +165,8 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
             fileSize: saved.size,
             score: review.score ?? undefined,
             critique: review.feedback || undefined,
+            variants:
+              postprocessed.variants.length > 0 ? postprocessed.variants : undefined,
             createdAt: Date.now(),
           };
           store.addAsset(record);

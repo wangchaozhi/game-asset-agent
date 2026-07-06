@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ProvidersResponse } from '@gaf/shared';
 import type { AppContext } from '../context.js';
+import { getPostprocessStatus } from '../postprocess/index.js';
 
 export function registerProviderRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/providers', async (): Promise<ProvidersResponse> => {
@@ -14,6 +15,7 @@ export function registerProviderRoutes(app: FastifyInstance, ctx: AppContext): v
             supportsVision: ctx.llm.supportsVision,
           }
         : { configured: false },
+      postprocess: await getPostprocessStatus(),
     };
   });
 

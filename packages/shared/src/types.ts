@@ -9,6 +9,14 @@ export type AssetType = 'sprite' | 'icon' | 'texture' | 'background' | 'ui' | 'c
 /** 任务生命周期状态 */
 export type JobStatus = 'queued' | 'planning' | 'generating' | 'reviewing' | 'completed' | 'failed';
 
+/** 素材后处理选项 */
+export interface PostprocessOptions {
+  /** 生成额外尺寸变体，例如 [0.5, 1, 2] 对应 @0.5x/@1x/@2x */
+  variants?: number[];
+  /** 额外输出格式；用于 PNG/WebP 转换或 SVG 栅格化 */
+  format?: 'png' | 'webp';
+}
+
 /** 生成请求（POST /api/jobs 的主体，经 zod 校验后的形态） */
 export interface GenerationRequest {
   /** 用户的自然语言需求描述 */
@@ -28,6 +36,8 @@ export interface GenerationRequest {
   negativePrompt?: string;
   /** 审查不通过时的重试次数上限 */
   maxRetries: number;
+  /** 素材后处理（WebP 副本 / 尺寸变体），服务端未安装 sharp 时自动跳过 */
+  postprocess?: PostprocessOptions;
 }
 
 /** 美术总监智能体产出的单条素材规划 */
@@ -41,7 +51,7 @@ export interface AssetPlanItem {
 /** 流水线运行中的进度事件（也会通过 SSE 推送） */
 export interface JobProgressEvent {
   ts: number;
-  /** plan | prompt | generate | review | save | retry | error | done */
+  /** plan | prompt | generate | review | postprocess | save | retry | error | done */
   stage: string;
   message: string;
   /** 该事件对应第几个素材（从 0 开始），全局事件则缺省 */
@@ -59,6 +69,17 @@ export interface Job {
   error?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+/** 后处理产生的素材变体 */
+export interface AssetVariant {
+  /** 展示标签：webp / 0.5x / png … */
+  label: string;
+  fileName: string;
+  width: number;
+  height: number;
+  format: string;
+  fileSize: number;
 }
 
 /** 已产出素材的元数据 */
@@ -83,7 +104,16 @@ export interface AssetRecord {
   score?: number;
   /** 审查官意见 */
   critique?: string;
+  /** 后处理变体（WebP / 缩放 / SVG 栅格化） */
+  variants?: AssetVariant[];
   createdAt: number;
+}
+
+/** Provider 连通性检查结果（POST /api/providers/:id/check） */
+export interface ProviderCheckResult {
+  ok: boolean;
+  message: string;
+  latencyMs?: number;
 }
 
 /** 图像 Provider 的能力描述（GET /api/providers） */
@@ -114,6 +144,8 @@ export interface LlmInfo {
 export interface ProvidersResponse {
   imageProviders: ProviderInfo[];
   llm: LlmInfo;
+  /** 服务端后处理能力（是否安装了 sharp） */
+  postprocess: { available: boolean };
 }
 
 /** SSE 推送的事件（event 字段区分类型，data 为 JSON） */

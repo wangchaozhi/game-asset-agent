@@ -29,6 +29,9 @@ export const api = {
     request<AssetRecord[]>(
       jobId ? `/api/assets?jobId=${encodeURIComponent(jobId)}` : '/api/assets',
     ),
+  exportAssetsUrl: (ids: string[]) =>
+    `/api/assets/export?ids=${ids.map((id) => encodeURIComponent(id)).join(',')}`,
+  exportJobUrl: (jobId: string) => `/api/jobs/${encodeURIComponent(jobId)}/export`,
   deleteAsset: (id: string) =>
     request<{ ok: boolean }>(`/api/assets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };

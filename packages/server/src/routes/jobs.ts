@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import type { Job } from '@gaf/shared';
+import type { AssetRecord, Job } from '@gaf/shared';
 import { createJobSchema } from '@gaf/shared';
 import type { AppContext } from '../context.js';
+import { sendAssetsZip } from './exportZip.js';
 
 export function registerJobRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const { store, registry, queue, events } = ctx;
+  const { store, storage, registry, queue, events } = ctx;
 
   // 创建生成任务
   app.post('/api/jobs', async (request, reply) => {
@@ -52,6 +53,18 @@ export function registerJobRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/jobs', async (request) => {
     const { limit } = request.query as { limit?: string };
     return store.listJobs(limit ? Number(limit) : 50);
+  });
+
+  // 导出某个任务产出的所有素材
+  app.get('/api/jobs/:id/export', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const job = store.getJob(id);
+    if (!job) return reply.status(404).send({ error: '任务不存在' });
+    const assets = job.assetIds
+      .map((assetId) => store.getAsset(assetId))
+      .filter((asset): asset is AssetRecord => Boolean(asset));
+    if (assets.length === 0) return reply.status(404).send({ error: '该任务暂无可导出的素材' });
+    sendAssetsZip(reply, storage, assets, `job-${id}.zip`);
   });
 
   // 任务详情

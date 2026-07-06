@@ -8,6 +8,7 @@ export function Gallery() {
   const [filter, setFilter] = useState<AssetType | 'all'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   const load = () => {
     setLoading(true);
@@ -25,12 +26,40 @@ export function Gallery() {
     try {
       await api.deleteAsset(id);
       setAssets((prev) => prev.filter((a) => a.id !== id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
 
   const visible = filter === 'all' ? assets : assets.filter((a) => a.assetType === filter);
+  const selectedVisibleCount = visible.filter((asset) => selectedIds.has(asset.id)).length;
+  const selectedForExport = assets.filter((asset) => selectedIds.has(asset.id)).map((asset) => asset.id);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (selectedVisibleCount === visible.length) {
+        visible.forEach((asset) => next.delete(asset.id));
+      } else {
+        visible.forEach((asset) => next.add(asset.id));
+      }
+      return next;
+    });
+  };
 
   return (
     <div>
@@ -45,6 +74,16 @@ export function Gallery() {
               </option>
             ))}
           </select>
+          <button onClick={toggleVisible} disabled={visible.length === 0}>
+            {selectedVisibleCount === visible.length && visible.length > 0 ? '取消全选' : '全选当前'}
+          </button>
+          {selectedForExport.length > 0 ? (
+            <a className="button-link" href={api.exportAssetsUrl(selectedForExport)} download>
+              导出选中（{selectedForExport.length}）
+            </a>
+          ) : (
+            <button disabled>导出选中</button>
+          )}
           <button onClick={load}>刷新</button>
         </div>
       </div>
@@ -58,6 +97,14 @@ export function Gallery() {
       <div className="asset-grid gallery-grid">
         {visible.map((asset) => (
           <div key={asset.id} className="asset-card">
+            <label className="asset-select">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(asset.id)}
+                onChange={() => toggleSelected(asset.id)}
+                aria-label={`选择 ${asset.name}`}
+              />
+            </label>
             <a href={`/files/${asset.fileName}`} target="_blank" rel="noreferrer">
               <img src={`/files/${asset.fileName}`} alt={asset.name} loading="lazy" />
             </a>
@@ -76,6 +123,15 @@ export function Gallery() {
                 <p className="prompt-text">{asset.prompt}</p>
                 {asset.critique && <p className="prompt-text">审查意见：{asset.critique}</p>}
               </details>
+              {asset.variants?.length ? (
+                <div className="variant-links">
+                  {asset.variants.map((variant) => (
+                    <a key={variant.fileName} href={`/files/${variant.fileName}`} download>
+                      {variant.label}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
               <div className="asset-actions">
                 <a className="download" href={`/files/${asset.fileName}`} download>
                   ⬇ 下载

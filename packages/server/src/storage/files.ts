@@ -11,8 +11,17 @@ export class FileStorage {
 
   async save(id: string, ext: string, data: Buffer): Promise<{ fileName: string; size: number }> {
     const fileName = `${id}.${ext}`;
-    await writeFile(this.resolve(fileName), data);
-    return { fileName, size: data.byteLength };
+    return this.saveFile(fileName, data);
+  }
+
+  async saveDerived(
+    id: string,
+    suffix: string,
+    ext: string,
+    data: Buffer,
+  ): Promise<{ fileName: string; size: number }> {
+    const safeSuffix = suffix.replace(/[^a-z0-9_.@-]/gi, '-');
+    return this.saveFile(`${id}${safeSuffix}.${ext}`, data);
   }
 
   async remove(fileName: string): Promise<void> {
@@ -27,5 +36,11 @@ export class FileStorage {
 
   get root(): string {
     return this.dir;
+  }
+
+  private async saveFile(fileName: string, data: Buffer): Promise<{ fileName: string; size: number }> {
+    const safeName = path.basename(fileName);
+    await writeFile(this.resolve(safeName), data);
+    return { fileName: safeName, size: data.byteLength };
   }
 }

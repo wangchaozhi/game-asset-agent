@@ -1,0 +1,35 @@
+{
+  "name": "game-asset-forge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GameAsset Forge — 多智能体协作的游戏素材生成平台（兼容多种图像/LLM 模型，提供 Web 界面）",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:shared": "npm run build -w @gaf/shared",
+    "dev": "npm run build:shared && concurrently -n server,web -c blue,green \"npm run dev -w @gaf/server\" \"npm run dev -w @gaf/web\"",
+    "build": "npm run build:shared && npm run typecheck -w @gaf/server && npm run build -w @gaf/web",
+    "start": "npm run start -w @gaf/server",
+    "test": "npm run build:shared && npm test --workspaces --if-present",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "concurrently": "^9.0.0",
+    "eslint": "^9.15.0",
+    "globals": "^15.12.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.15.0",
+    "vitest": "^3.0.0"
+  }
+}

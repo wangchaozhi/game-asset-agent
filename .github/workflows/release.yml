@@ -1,0 +1,39 @@
+name: Release
+
+# 推送 v* 标签时触发：完整验证后自动创建 GitHub Release，
+# 并附带可部署的前端构建产物压缩包
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+      - name: Package web dist
+        run: |
+          cd apps/web/dist
+          zip -r "../../../game-asset-forge-web-${GITHUB_REF_NAME}.zip" .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: GameAsset Forge ${{ github.ref_name }}
+          generate_release_notes: true
+          files: game-asset-forge-web-*.zip

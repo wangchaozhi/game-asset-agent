@@ -1,3 +1,4 @@
+import type { AudioProviderRegistry } from './audiogen/registry.js';
 import type { ServerConfig } from './config.js';
 import type { Store } from './db/store.js';
 import type { JobEventBus } from './events.js';
@@ -12,6 +13,7 @@ export interface AppContext {
   store: Store;
   storage: FileStorage;
   registry: ProviderRegistry;
+  audioRegistry: AudioProviderRegistry;
   llm: LlmClient | null;
   events: JobEventBus;
   queue: JobQueue;

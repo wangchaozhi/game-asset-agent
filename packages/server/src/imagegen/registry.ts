@@ -1,9 +1,12 @@
 import type { ProviderInfo } from '@gaf/shared';
 import type { ServerConfig } from '../config.js';
+import { ComfyUiProvider } from './providers/comfyui.js';
 import { MockProvider } from './providers/mock.js';
 import { OpenAiImagesProvider } from './providers/openaiImages.js';
+import { ReplicateProvider } from './providers/replicate.js';
 import { SdWebuiProvider } from './providers/sdWebui.js';
 import { StabilityProvider } from './providers/stability.js';
+import { TongyiWanxiangProvider } from './providers/tongyiWanxiang.js';
 import { toProviderInfo, type ImageProvider } from './types.js';
 
 /** 图像 Provider 注册表：新增模型服务只需 register 一行 */
@@ -30,5 +33,14 @@ export function createRegistry(config: ServerConfig): ProviderRegistry {
     .register(new MockProvider())
     .register(new OpenAiImagesProvider(imageProviders.openaiApiKey, imageProviders.openaiBaseUrl))
     .register(new StabilityProvider(imageProviders.stabilityApiKey))
-    .register(new SdWebuiProvider(imageProviders.sdWebuiUrl));
+    .register(new ReplicateProvider(imageProviders.replicateToken))
+    .register(new TongyiWanxiangProvider(imageProviders.dashscopeApiKey))
+    .register(new SdWebuiProvider(imageProviders.sdWebuiUrl))
+    .register(
+      new ComfyUiProvider(
+        imageProviders.comfyuiUrl,
+        config.workflowsDir,
+        imageProviders.comfyuiCheckpoint,
+      ),
+    );
 }

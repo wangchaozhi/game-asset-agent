@@ -1,4 +1,4 @@
-import type { AssetType } from '@gaf/shared';
+import type { AssetType, ProviderCheckResult } from '@gaf/shared';
 import type { ImageGenInput, ImageGenResult, ImageProvider } from '../types.js';
 
 /**
@@ -25,6 +25,10 @@ export class MockProvider implements ImageProvider {
     const seed = input.seed ?? fnv1a(input.prompt);
     const svg = renderSvg(input.assetType ?? 'concept', input.width, input.height, seed);
     return { data: Buffer.from(svg, 'utf8'), format: 'svg', model: this.defaultModel };
+  }
+
+  async healthCheck(): Promise<ProviderCheckResult> {
+    return { ok: true, message: '内置占位生成器随时可用（无需密钥）', latencyMs: 0 };
   }
 }
 

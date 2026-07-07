@@ -1,4 +1,4 @@
-import type { AssetPlanItem, GenerationRequest } from '@gaf/shared';
+import type { AssetPlanItem, GenerationRequest, ImageAssetType } from '@gaf/shared';
 import { ASSET_TYPE_META, getStylePreset } from '@gaf/shared';
 import type { LlmClient } from '../llm/types.js';
 import { extractJson } from '../util/json.js';
@@ -34,7 +34,7 @@ export async function planAssets(
 ): Promise<{ items: AssetPlanItem[]; usedLlm: boolean }> {
   if (llm) {
     try {
-      const meta = ASSET_TYPE_META[request.assetType];
+      const meta = ASSET_TYPE_META[request.assetType as ImageAssetType];
       const style = getStylePreset(request.style);
       const raw = await llm.complete({
         system: SYSTEM_PROMPT,

@@ -1,0 +1,33 @@
+# GameAsset Forge 一键部署：构建镜像并挂载数据卷
+# 用法：docker compose up -d --build，然后访问 http://localhost:8787
+services:
+  gameasset-forge:
+    build: .
+    image: gameasset-forge:latest
+    container_name: gameasset-forge
+    ports:
+      - '8787:8787'
+    volumes:
+      # 素材文件与元数据库持久化到主机
+      - gaf-data:/data
+    environment:
+      # 数据目录（容器内）
+      DATA_DIR: /data
+      HOST: 0.0.0.0
+      PORT: '8787'
+      # ↓↓↓ 按需填写密钥即可启用对应能力（留空则以 mock + 规则模板零配置运行）↓↓↓
+      # LLM_PROVIDER: anthropic        # anthropic | openai | gemini | none
+      # ANTHROPIC_API_KEY: ''
+      # OPENAI_API_KEY: ''
+      # GEMINI_API_KEY: ''
+      # STABILITY_API_KEY: ''
+      # REPLICATE_API_TOKEN: ''
+      # DASHSCOPE_API_KEY: ''
+      # SD_WEBUI_URL: ''
+      # COMFYUI_URL: ''
+      # 可选：管理员访问令牌（设置后所有 /api 需 Bearer 鉴权）
+      # AUTH_TOKEN: ''
+    restart: unless-stopped
+
+volumes:
+  gaf-data:

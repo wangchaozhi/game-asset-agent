@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AssetRecord } from '@gaf/shared';
+import { renameAssetSchema } from '@gaf/shared';
 import type { AppContext } from '../context.js';
 import { sendAssetsZip } from './exportZip.js';
 
@@ -36,6 +37,23 @@ export function registerAssetRoutes(app: FastifyInstance, ctx: AppContext): void
     return asset;
   });
 
+  // 素材重命名
+  app.patch('/api/assets/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = renameAssetSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: '重命名参数不合法',
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      });
+    }
+    const updated = store.updateAsset(id, (a) => {
+      a.name = parsed.data.name;
+    });
+    if (!updated) return reply.status(404).send({ error: '素材不存在' });
+    return updated;
+  });
+
   // 删除素材（文件 + 记录）
   app.delete('/api/assets/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -43,6 +61,7 @@ export function registerAssetRoutes(app: FastifyInstance, ctx: AppContext): void
     if (!asset) return reply.status(404).send({ error: '素材不存在' });
     await Promise.all([
       storage.remove(asset.fileName),
+      ...(asset.seamPreview ? [storage.remove(asset.seamPreview)] : []),
       ...(asset.variants ?? []).map((variant) => storage.remove(variant.fileName)),
     ]);
     return { ok: true };

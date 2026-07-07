@@ -3,8 +3,11 @@ import { loadConfig } from './config.js';
 import type { AppContext } from './context.js';
 import { Store } from './db/store.js';
 import { JobEventBus } from './events.js';
+import { createAudioRegistry } from './audiogen/registry.js';
 import { createRegistry } from './imagegen/registry.js';
 import { createLlm } from './llm/index.js';
+import { TrackingLlm } from './llm/tracking.js';
+import { runAudioJob } from './agents/audioPipeline.js';
 import { runJob } from './agents/pipeline.js';
 import { JobQueue } from './queue/jobQueue.js';
 import { FileStorage } from './storage/files.js';
@@ -19,7 +22,14 @@ async function main(): Promise<void> {
   await storage.init();
 
   const registry = createRegistry(config);
-  const llm = createLlm(config);
+  const audioRegistry = createAudioRegistry(config);
+  const baseLlm = createLlm(config);
+  // 包一层用量追踪，为成本面板估算 token（不改动上层接口）
+  const llm = baseLlm
+    ? new TrackingLlm(baseLlm, (tokensIn, tokensOut) =>
+        store.recordLlm(baseLlm.provider, baseLlm.model, tokensIn, tokensOut),
+      )
+    : null;
   const events = new JobEventBus();
 
   const ctx: AppContext = {
@@ -27,17 +37,24 @@ async function main(): Promise<void> {
     store,
     storage,
     registry,
+    audioRegistry,
     llm,
     events,
     queue: null as unknown as AppContext['queue'],
   };
-  ctx.queue = new JobQueue(config.queueConcurrency, (jobId) =>
-    runJob(jobId, { store, storage, registry, llm, events }),
-  );
+  ctx.queue = new JobQueue(config.queueConcurrency, (jobId) => {
+    const job = store.getJob(jobId);
+    const isCanceled = (id: string) => ctx.queue.isCanceling(id);
+    if (job?.request.kind === 'audio') {
+      return runAudioJob(jobId, { store, storage, audioRegistry, llm, events, isCanceled });
+    }
+    return runJob(jobId, { store, storage, registry, llm, events, isCanceled });
+  });
 
   // 服务重启后，把中断的任务标记为失败（避免永远停留在 running 状态）
+  const TERMINAL = new Set(['completed', 'failed', 'canceled']);
   for (const job of store.listJobs(1000)) {
-    if (job.status !== 'completed' && job.status !== 'failed') {
+    if (!TERMINAL.has(job.status)) {
       store.updateJob(job.id, (j) => {
         j.status = 'failed';
         j.error = '服务重启导致任务中断';
@@ -54,6 +71,14 @@ async function main(): Promise<void> {
     .map((p) => p.id)
     .join(', ');
   app.log.info(`图像 Provider（已配置）: ${configured}`);
+  app.log.info(
+    `音频 Provider（已配置）: ${audioRegistry
+      .list()
+      .filter((p) => p.configured)
+      .map((p) => p.id)
+      .join(', ')}`,
+  );
+  if (config.authToken) app.log.info('已启用 AUTH_TOKEN 鉴权');
   app.log.info(
     llm
       ? `LLM 智能体大脑: ${llm.provider} / ${llm.model}（vision: ${llm.supportsVision}）`

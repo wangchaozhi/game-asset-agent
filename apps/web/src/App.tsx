@@ -1,23 +1,73 @@
 import { useEffect, useState } from 'react';
-import type { ProvidersResponse } from '@gaf/shared';
-import { api } from './api';
+import type { GenerationRequest, ProvidersResponse } from '@gaf/shared';
+import { api, getAuthToken, setAuthToken } from './api';
+import { AudioPanel } from './components/AudioPanel';
 import { Gallery } from './components/Gallery';
 import { GeneratePanel } from './components/GeneratePanel';
+import { Login } from './components/Login';
 import { ProviderStatus } from './components/ProviderStatus';
+import { StyleProfiles } from './components/StyleProfiles';
+import { TaskHistory } from './components/TaskHistory';
 
-type Tab = 'generate' | 'gallery' | 'system';
+type Tab = 'generate' | 'audio' | 'gallery' | 'history' | 'styles' | 'system';
+
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'generate', label: '生成素材' },
+  { id: 'audio', label: '音频生成' },
+  { id: 'gallery', label: '素材画廊' },
+  { id: 'history', label: '任务历史' },
+  { id: 'styles', label: '风格档案' },
+  { id: 'system', label: '系统状态' },
+];
 
 export function App() {
   const [tab, setTab] = useState<Tab>('generate');
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [needLogin, setNeedLogin] = useState(false);
+  // 「同参重新生成」预填参数 + nonce（用于强制重建生成表单）
+  const [prefill, setPrefill] = useState<Partial<GenerationRequest> | null>(null);
+  const [prefillNonce, setPrefillNonce] = useState(0);
+
+  const loadProviders = () => {
+    api
+      .providers()
+      .then((p) => {
+        setProviders(p);
+        setNeedLogin(false);
+        setLoadError(null);
+      })
+      .catch((err: Error) => setLoadError(err.message));
+  };
 
   useEffect(() => {
     api
-      .providers()
-      .then(setProviders)
+      .authInfo()
+      .then((info) => {
+        if (info.required && !getAuthToken()) {
+          setNeedLogin(true);
+          return;
+        }
+        loadProviders();
+      })
       .catch((err: Error) => setLoadError(err.message));
   }, []);
+
+  const logout = () => {
+    setAuthToken(null);
+    setProviders(null);
+    setNeedLogin(true);
+  };
+
+  if (needLogin) {
+    return <Login onSuccess={loadProviders} />;
+  }
+
+  const regenerate = (next: Partial<GenerationRequest>) => {
+    setPrefill(next);
+    setPrefillNonce((n) => n + 1);
+    setTab('generate');
+  };
 
   return (
     <div className="app">
@@ -30,24 +80,15 @@ export function App() {
           </div>
         </div>
         <nav className="tabs">
-          <button
-            className={tab === 'generate' ? 'tab active' : 'tab'}
-            onClick={() => setTab('generate')}
-          >
-            生成素材
-          </button>
-          <button
-            className={tab === 'gallery' ? 'tab active' : 'tab'}
-            onClick={() => setTab('gallery')}
-          >
-            素材画廊
-          </button>
-          <button
-            className={tab === 'system' ? 'tab active' : 'tab'}
-            onClick={() => setTab('system')}
-          >
-            系统状态
-          </button>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={tab === t.id ? 'tab active' : 'tab'}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
         </nav>
       </header>
 
@@ -57,9 +98,12 @@ export function App() {
         {providers && (
           <>
             <div style={{ display: tab === 'generate' ? 'block' : 'none' }}>
-              <GeneratePanel providers={providers} />
+              <GeneratePanel key={prefillNonce} providers={providers} prefill={prefill} />
             </div>
-            {tab === 'gallery' && <Gallery />}
+            {tab === 'audio' && <AudioPanel providers={providers} />}
+            {tab === 'gallery' && <Gallery onRegenerate={regenerate} />}
+            {tab === 'history' && <TaskHistory onRegenerate={regenerate} />}
+            {tab === 'styles' && <StyleProfiles />}
             {tab === 'system' && <ProviderStatus providers={providers} />}
           </>
         )}
@@ -73,6 +117,11 @@ export function App() {
           </span>
         ) : (
           <span>LLM 未配置 —— 智能体以内置模板运行，配置 API Key 可启用智能规划与质量审查</span>
+        )}
+        {getAuthToken() && (
+          <button className="logout-link" onClick={logout}>
+            退出登录
+          </button>
         )}
       </footer>
     </div>

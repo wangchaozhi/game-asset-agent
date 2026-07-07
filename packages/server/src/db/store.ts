@@ -1,10 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { AssetRecord, Job } from '@gaf/shared';
+import type { AssetRecord, Job, StyleProfile, UsageStat, UsageSummary } from '@gaf/shared';
 
 interface DbShape {
   jobs: Job[];
   assets: AssetRecord[];
+  styleProfiles?: StyleProfile[];
+  usage?: { images: UsageStat[]; llm: UsageStat[] };
 }
 
 /**
@@ -16,6 +18,9 @@ interface DbShape {
 export class Store {
   private jobs = new Map<string, Job>();
   private assets = new Map<string, AssetRecord>();
+  private styleProfiles = new Map<string, StyleProfile>();
+  private imageUsage = new Map<string, UsageStat>();
+  private llmUsage = new Map<string, UsageStat>();
   private persistTimer: NodeJS.Timeout | null = null;
   private persisting: Promise<void> = Promise.resolve();
 
@@ -28,6 +33,9 @@ export class Store {
       const data = JSON.parse(raw) as DbShape;
       for (const job of data.jobs ?? []) this.jobs.set(job.id, job);
       for (const asset of data.assets ?? []) this.assets.set(asset.id, asset);
+      for (const profile of data.styleProfiles ?? []) this.styleProfiles.set(profile.id, profile);
+      for (const stat of data.usage?.images ?? []) this.imageUsage.set(stat.key, stat);
+      for (const stat of data.usage?.llm ?? []) this.llmUsage.set(stat.key, stat);
     } catch {
       // 文件不存在或损坏时从空库开始（损坏文件会在下次持久化时被覆盖）
     }
@@ -70,6 +78,14 @@ export class Store {
     return this.assets.get(id);
   }
 
+  updateAsset(id: string, mutate: (asset: AssetRecord) => void): AssetRecord | undefined {
+    const asset = this.assets.get(id);
+    if (!asset) return undefined;
+    mutate(asset);
+    this.schedulePersist();
+    return asset;
+  }
+
   deleteAsset(id: string): AssetRecord | undefined {
     const asset = this.assets.get(id);
     if (!asset) return undefined;
@@ -89,6 +105,75 @@ export class Store {
     return all.slice(0, options.limit ?? 200);
   }
 
+  // ---------- StyleProfile ----------
+
+  createStyleProfile(profile: StyleProfile): StyleProfile {
+    this.styleProfiles.set(profile.id, profile);
+    this.schedulePersist();
+    return profile;
+  }
+
+  getStyleProfile(id: string): StyleProfile | undefined {
+    return this.styleProfiles.get(id);
+  }
+
+  listStyleProfiles(): StyleProfile[] {
+    return [...this.styleProfiles.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  updateStyleProfile(
+    id: string,
+    mutate: (profile: StyleProfile) => void,
+  ): StyleProfile | undefined {
+    const profile = this.styleProfiles.get(id);
+    if (!profile) return undefined;
+    mutate(profile);
+    profile.updatedAt = Date.now();
+    this.schedulePersist();
+    return profile;
+  }
+
+  deleteStyleProfile(id: string): boolean {
+    const existed = this.styleProfiles.delete(id);
+    if (existed) this.schedulePersist();
+    return existed;
+  }
+
+  // ---------- 用量 / 成本统计 ----------
+
+  recordImage(provider: string, model: string): void {
+    const key = `${provider}/${model}`;
+    const stat = this.imageUsage.get(key) ?? { key, provider, model, calls: 0 };
+    stat.calls += 1;
+    this.imageUsage.set(key, stat);
+    this.schedulePersist();
+  }
+
+  recordLlm(provider: string, model: string, tokensIn: number, tokensOut: number): void {
+    const key = `${provider}/${model}`;
+    const stat = this.llmUsage.get(key) ?? {
+      key,
+      provider,
+      model,
+      calls: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+    };
+    stat.calls += 1;
+    stat.tokensIn = (stat.tokensIn ?? 0) + tokensIn;
+    stat.tokensOut = (stat.tokensOut ?? 0) + tokensOut;
+    this.llmUsage.set(key, stat);
+    this.schedulePersist();
+  }
+
+  getUsage(): UsageSummary {
+    return {
+      images: [...this.imageUsage.values()].sort((a, b) => b.calls - a.calls),
+      llm: [...this.llmUsage.values()].sort((a, b) => b.calls - a.calls),
+      updatedAt: Date.now(),
+    };
+  }
+
   // ---------- 持久化 ----------
 
   private schedulePersist(): void {
@@ -104,6 +189,11 @@ export class Store {
     const data: DbShape = {
       jobs: [...this.jobs.values()],
       assets: [...this.assets.values()],
+      styleProfiles: [...this.styleProfiles.values()],
+      usage: {
+        images: [...this.imageUsage.values()],
+        llm: [...this.llmUsage.values()],
+      },
     };
     const tmp = `${this.file}.tmp`;
     await writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');

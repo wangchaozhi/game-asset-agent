@@ -73,14 +73,30 @@ interface ImageProvider {
 `register(...)` 一行。前端的引擎下拉框、配置状态展示、API 校验全部自动生效
 （数据来自 `GET /api/providers`）。
 
-内置四个 Provider：
+内置图像 Provider：
 
-| id              | 服务             | 说明                                                                            |
-| --------------- | ---------------- | ------------------------------------------------------------------------------- |
-| `mock`          | 内置 SVG 生成器  | 零密钥；按素材类型绘制确定性占位图（同提示词同输出），支撑无 Key 体验与原型开发 |
-| `openai-images` | OpenAI Images    | gpt-image-1 / dall-e-3；尺寸自动映射到模型支持的最近档位                        |
-| `stability`     | Stability AI     | Core / SD3.5 / Ultra；宽高自动映射到最近的 aspect_ratio                         |
-| `sd-webui`      | 本地 A1111 WebUI | 任意本地 Checkpoint，需 `--api` 启动                                            |
+| id                | 服务             | 说明                                                                            |
+| ----------------- | ---------------- | ------------------------------------------------------------------------------- |
+| `mock`            | 内置 SVG 生成器  | 零密钥；按素材类型绘制确定性占位图（同提示词同输出），支撑无 Key 体验与原型开发 |
+| `openai-images`   | OpenAI Images    | gpt-image-1 / dall-e-3；含 gpt-image-1 参考图 edits                             |
+| `stability`       | Stability AI     | Core / SD3.5 / Ultra；含 image-to-image                                         |
+| `replicate`       | Replicate        | FLUX / SDXL 等开源模型；异步预测轮询                                            |
+| `tongyi-wanxiang` | 通义万相         | 阿里云 DashScope；中文提示词更佳（`preferredPromptLanguage: 'zh'`）             |
+| `sd-webui`        | 本地 A1111 WebUI | 任意本地 Checkpoint，需 `--api`；含 img2img                                     |
+| `comfyui`         | 本地 ComfyUI     | 内置参数化 workflow，支持 `DATA_DIR/workflows/` 自定义模板                      |
+
+图像 Provider 还支持可选 `healthCheck()`（连通性检查）与参考图能力位。
+
+### 音频 Provider（`audiogen/`）
+
+与图像 Provider 同构的注册表（`AudioProvider.generate → {data, format:'wav'|'mp3'}`）。
+音频任务由独立的 `runAudioJob` 编排（复用队列 / 事件 / 存储，跳过视觉审查）。
+
+| id             | 服务                   | 说明                                  |
+| -------------- | ---------------------- | ------------------------------------- |
+| `mock-audio`   | 内置 WAV 合成器        | 零密钥；确定性合成音效 / BGM 占位音频 |
+| `elevenlabs`   | ElevenLabs Sound FX    | 音效与短氛围音                        |
+| `stable-audio` | Stability Stable Audio | 音效与器乐 BGM                        |
 
 ### LLM 适配（`llm/`）
 

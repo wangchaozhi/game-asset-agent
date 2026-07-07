@@ -13,11 +13,18 @@ interface ManifestFile {
   path: string;
 }
 
+export interface ExtraExportFile {
+  fileName: string;
+  /** zip 内路径 */
+  path: string;
+}
+
 export function sendAssetsZip(
   reply: FastifyReply,
   storage: FileStorage,
   assets: AssetRecord[],
   downloadName: string,
+  extraFiles: ExtraExportFile[] = [],
 ): void {
   const safeDownloadName = sanitizeDownloadName(downloadName);
   reply.hijack();
@@ -42,6 +49,13 @@ export function sendAssetsZip(
     }
     return { ...asset, files };
   });
+
+  for (const extra of extraFiles) {
+    const diskPath = storage.resolve(extra.fileName);
+    if (existsSync(diskPath)) {
+      archive.append(createReadStream(diskPath), { name: extra.path });
+    }
+  }
 
   archive.append(
     JSON.stringify(

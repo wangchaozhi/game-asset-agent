@@ -6,9 +6,9 @@ import type { AppContext } from '../context.js';
 import { sendAssetsZip } from './exportZip.js';
 
 export function registerJobRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const { store, storage, registry, queue, events } = ctx;
+  const { store, storage, registry, audioRegistry, queue, events } = ctx;
 
-  // 创建生成任务
+  // 创建生成任务（图像 or 音频，按 kind 分流）
   app.post('/api/jobs', async (request, reply) => {
     const parsed = createJobSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -19,9 +19,11 @@ export function registerJobRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
 
     const input = parsed.data;
-    const provider = registry.get(input.provider);
+    const provider =
+      input.kind === 'audio' ? audioRegistry.get(input.provider) : registry.get(input.provider);
+    const kindLabel = input.kind === 'audio' ? '音频' : '图像';
     if (!provider) {
-      return reply.status(400).send({ error: `未知的图像 Provider: ${input.provider}` });
+      return reply.status(400).send({ error: `未知的${kindLabel} Provider: ${input.provider}` });
     }
     if (!provider.isConfigured()) {
       return reply.status(400).send({
@@ -64,7 +66,39 @@ export function registerJobRoutes(app: FastifyInstance, ctx: AppContext): void {
       .map((assetId) => store.getAsset(assetId))
       .filter((asset): asset is AssetRecord => Boolean(asset));
     if (assets.length === 0) return reply.status(404).send({ error: '该任务暂无可导出的素材' });
-    sendAssetsZip(reply, storage, assets, `job-${id}.zip`);
+    const extras = job.spritesheet
+      ? [
+          { fileName: job.spritesheet.fileName, path: `spritesheet/${job.spritesheet.fileName}` },
+          {
+            fileName: job.spritesheet.jsonFileName,
+            path: `spritesheet/${job.spritesheet.jsonFileName}`,
+          },
+        ]
+      : [];
+    sendAssetsZip(reply, storage, assets, `job-${id}.zip`, extras);
+  });
+
+  // 取消任务（队列中直接移除；执行中置取消标记，流水线在阶段边界终止）
+  app.post('/api/jobs/:id/cancel', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const job = store.getJob(id);
+    if (!job) return reply.status(404).send({ error: '任务不存在' });
+    if (job.status === 'completed' || job.status === 'failed' || job.status === 'canceled') {
+      return reply.status(409).send({ error: '任务已结束，无法取消' });
+    }
+    const outcome = queue.cancel(id);
+    if (outcome === 'removed') {
+      const updated = store.updateJob(id, (j) => {
+        j.status = 'canceled';
+        j.error = '任务已取消';
+        j.progress.push({ ts: Date.now(), stage: 'error', message: '任务已取消（队列中移除）' });
+      });
+      if (updated) {
+        events.publish(id, { type: 'status', status: 'canceled' });
+        events.publish(id, { type: 'end', job: updated });
+      }
+    }
+    return { ok: true, outcome };
   });
 
   // 任务详情

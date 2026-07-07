@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /** 素材文件的落盘存储（DATA_DIR/assets 下，经 /files/ 静态服务对外提供） */
@@ -24,6 +24,10 @@ export class FileStorage {
     return this.saveFile(`${id}${safeSuffix}.${ext}`, data);
   }
 
+  async read(fileName: string): Promise<Buffer> {
+    return readFile(this.resolve(fileName));
+  }
+
   async remove(fileName: string): Promise<void> {
     await rm(this.resolve(fileName), { force: true });
   }
@@ -38,7 +42,10 @@ export class FileStorage {
     return this.dir;
   }
 
-  private async saveFile(fileName: string, data: Buffer): Promise<{ fileName: string; size: number }> {
+  private async saveFile(
+    fileName: string,
+    data: Buffer,
+  ): Promise<{ fileName: string; size: number }> {
     const safeName = path.basename(fileName);
     await writeFile(this.resolve(safeName), data);
     return { fileName: safeName, size: data.byteLength };

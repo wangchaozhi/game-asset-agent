@@ -3,12 +3,20 @@ import type { AssetRecord, JobStatus, JobStreamEvent } from '@gaf/shared';
 import type { Store } from '../db/store.js';
 import type { JobEventBus } from '../events.js';
 import type { ProviderRegistry } from '../imagegen/registry.js';
+import type { ReferenceImage } from '../imagegen/types.js';
 import type { LlmClient } from '../llm/types.js';
-import { postprocessAsset } from '../postprocess/index.js';
+import { composeSpritesheet, makeSeamPreview, postprocessAsset } from '../postprocess/index.js';
 import type { FileStorage } from '../storage/files.js';
 import { reviewAsset } from './critic.js';
 import { planAssets } from './director.js';
 import { buildPrompt } from './promptsmith.js';
+
+function mediaTypeFromName(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  return 'image/png';
+}
 
 export interface PipelineDeps {
   store: Store;
@@ -16,6 +24,16 @@ export interface PipelineDeps {
   registry: ProviderRegistry;
   llm: LlmClient | null;
   events: JobEventBus;
+  /** 查询任务是否被请求取消（流水线在阶段边界检查） */
+  isCanceled?: (jobId: string) => boolean;
+}
+
+/** 用于在阶段边界中断流水线的哨兵错误 */
+class JobCanceledError extends Error {
+  constructor() {
+    super('任务已取消');
+    this.name = 'JobCanceledError';
+  }
 }
 
 /**
@@ -34,6 +52,9 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
   if (!job) return;
 
   const publish = (event: JobStreamEvent) => events.publish(jobId, event);
+  const checkCanceled = () => {
+    if (deps.isCanceled?.(jobId)) throw new JobCanceledError();
+  };
 
   const setStatus = (status: JobStatus) => {
     store.updateJob(jobId, (j) => {
@@ -66,7 +87,36 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
     }
     const model = request.model || provider.defaultModel;
 
+    // 解析风格档案（跨批次一致性）与参考图（img2img）
+    const styleProfile = request.styleProfileId
+      ? (store.getStyleProfile(request.styleProfileId) ?? null)
+      : null;
+    if (request.styleProfileId && !styleProfile) {
+      log('plan', `风格档案 ${request.styleProfileId} 不存在，已忽略`);
+    }
+
+    let referenceImage: ReferenceImage | undefined;
+    const referenceName = request.referenceImage ?? styleProfile?.referenceImage;
+    if (referenceName) {
+      if (provider.supportsReferenceImage) {
+        try {
+          const data = await storage.read(referenceName);
+          referenceImage = {
+            data,
+            mediaType: mediaTypeFromName(referenceName),
+            strength: request.referenceStrength,
+          };
+          log('plan', `已载入参考图 ${referenceName}（img2img）`);
+        } catch (err) {
+          log('error', `参考图载入失败：${errorMessage(err)}`);
+        }
+      } else {
+        log('plan', `Provider「${provider.label}」不支持参考图，已忽略`);
+      }
+    }
+
     // ① 美术总监
+    checkCanceled();
     setStatus('planning');
     log('plan', `美术总监正在拆解需求（${llm ? `LLM: ${llm.model}` : '规则模板'}）…`);
     const { items: plan, usedLlm: planByLlm } = await planAssets(request, llm);
@@ -84,15 +134,22 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
     setStatus('generating');
     const maxAttempts = 1 + request.maxRetries;
     let succeeded = 0;
+    const frameBuffers: Buffer[] = [];
 
     for (let i = 0; i < plan.length; i++) {
+      checkCanceled();
       const item = plan[i];
       let feedback: string | undefined;
 
       try {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          // ② 提示词工程师
-          const built = await buildPrompt(item, request, llm, feedback);
+          // ② 提示词工程师（按 Provider 首选语言决定中/英文提示词）
+          const built = await buildPrompt(item, request, llm, {
+            feedback,
+            language: provider.preferredPromptLanguage ?? 'en',
+            styleProfile,
+            characterSheet: request.characterSheet,
+          });
           log(
             'prompt',
             `提示词就绪（${built.usedLlm ? 'LLM 优化' : '模板'}${attempt > 1 ? `，第 ${attempt} 次尝试` : ''}）：${built.prompt.slice(0, 160)}${built.prompt.length > 160 ? '…' : ''}`,
@@ -108,8 +165,11 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
               width: request.width,
               height: request.height,
               assetType: request.assetType,
+              ...(request.seed !== undefined ? { seed: request.seed } : {}),
+              ...(referenceImage ? { referenceImage } : {}),
             },
             model,
+            (message) => log('generate', message, i),
           );
 
           // ④ 审查官
@@ -148,6 +208,17 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
             log('postprocess', `已生成 ${postprocessed.variants.length} 个后处理变体`, i);
           }
 
+          // 无缝贴图接缝自检：texture 类型生成一张偏移拼接的预览图（sharp 可栅格化 SVG）
+          let seamPreview: string | undefined;
+          if (request.assetType === 'texture') {
+            const preview = await makeSeamPreview(result.data);
+            if (preview) {
+              const savedPreview = await storage.saveDerived(assetId, '-seam', 'png', preview);
+              seamPreview = savedPreview.fileName;
+              log('postprocess', '已生成无缝贴图接缝预览图', i);
+            }
+          }
+
           const record: AssetRecord = {
             id: assetId,
             jobId,
@@ -165,14 +236,19 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
             fileSize: saved.size,
             score: review.score ?? undefined,
             critique: review.feedback || undefined,
-            variants:
-              postprocessed.variants.length > 0 ? postprocessed.variants : undefined,
+            reviewDimensions: review.dimensions,
+            variants: postprocessed.variants.length > 0 ? postprocessed.variants : undefined,
+            seed: request.seed,
+            parentAssetId: request.parentAssetId,
+            seamPreview,
             createdAt: Date.now(),
           };
           store.addAsset(record);
           store.updateJob(jobId, (j) => {
             j.assetIds.push(assetId);
           });
+          store.recordImage(provider.id, result.model);
+          frameBuffers.push(result.data);
           succeeded++;
           log('save', `「${item.name}」已保存（${saved.fileName}，${formatBytes(saved.size)}）`, i);
           break;
@@ -185,19 +261,60 @@ export async function runJob(jobId: string, deps: PipelineDeps): Promise<void> {
     if (succeeded === 0) {
       throw new Error('所有素材均生成失败');
     }
+
+    // 精灵表合成：把各帧拼成统一网格 + 输出 Phaser/Unity 兼容 JSON 元数据
+    if (request.spritesheet && frameBuffers.length >= 2) {
+      const sheetImageName = `${jobId}-sheet.png`;
+      const sheet = await composeSpritesheet(frameBuffers, sheetImageName);
+      if (sheet) {
+        const savedSheet = await storage.save(`${jobId}-sheet`, 'png', sheet.sheet);
+        const savedJson = await storage.save(
+          `${jobId}-sheet`,
+          'json',
+          Buffer.from(JSON.stringify(sheet.atlas, null, 2), 'utf8'),
+        );
+        store.updateJob(jobId, (j) => {
+          j.spritesheet = {
+            fileName: savedSheet.fileName,
+            jsonFileName: savedJson.fileName,
+            frameWidth: sheet.frameWidth,
+            frameHeight: sheet.frameHeight,
+            columns: sheet.columns,
+            rows: sheet.rows,
+            frameCount: sheet.frameCount,
+          };
+        });
+        log(
+          'postprocess',
+          `已合成精灵表：${sheet.frameCount} 帧 · ${sheet.columns}×${sheet.rows} 网格`,
+        );
+      } else {
+        log('postprocess', '精灵表合成已跳过（需 sharp，且帧数≥2）');
+      }
+    }
+
     store.updateJob(jobId, (j) => {
       j.status = 'completed';
     });
     log('done', `任务完成：成功 ${succeeded}/${plan.length} 项`);
     publish({ type: 'status', status: 'completed' });
   } catch (err) {
-    const message = errorMessage(err);
-    store.updateJob(jobId, (j) => {
-      j.status = 'failed';
-      j.error = message;
-    });
-    log('error', `任务失败：${message}`);
-    publish({ type: 'status', status: 'failed' });
+    if (err instanceof JobCanceledError) {
+      store.updateJob(jobId, (j) => {
+        j.status = 'canceled';
+        j.error = '任务已取消';
+      });
+      log('error', '任务已取消');
+      publish({ type: 'status', status: 'canceled' });
+    } else {
+      const message = errorMessage(err);
+      store.updateJob(jobId, (j) => {
+        j.status = 'failed';
+        j.error = message;
+      });
+      log('error', `任务失败：${message}`);
+      publish({ type: 'status', status: 'failed' });
+    }
   } finally {
     finish();
   }

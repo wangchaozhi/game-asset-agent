@@ -1,3 +1,5 @@
+import type { ProviderCheckResult } from '@gaf/shared';
+import { errorMessage, fetchWithTimeout, withTiming } from '../../util/http.js';
 import type { ImageGenInput, ImageGenResult, ImageProvider } from '../types.js';
 
 interface ImagesResponse {
@@ -13,7 +15,8 @@ export class OpenAiImagesProvider implements ImageProvider {
   readonly defaultModel = 'gpt-image-1';
   readonly supportsNegativePrompt = false;
   readonly outputFormat = 'png';
-  readonly note = '负向提示词会被合并进正向提示词（该 API 不支持独立负向词）';
+  readonly supportsReferenceImage = true;
+  readonly note = '负向提示词会被合并进正向提示词；gpt-image-1 支持参考图（走 edits 接口）';
 
   constructor(
     private readonly apiKey: string | undefined,
@@ -30,6 +33,11 @@ export class OpenAiImagesProvider implements ImageProvider {
     let prompt = input.prompt;
     if (input.negativePrompt) {
       prompt += `\nAvoid the following: ${input.negativePrompt}`;
+    }
+
+    // gpt-image-1 支持参考图编辑；dall-e-3 不支持，回退到纯文生图
+    if (input.referenceImage && model === 'gpt-image-1') {
+      return this.edit(prompt, model, input);
     }
 
     const body: Record<string, unknown> = {
@@ -66,6 +74,52 @@ export class OpenAiImagesProvider implements ImageProvider {
       return { data: Buffer.from(await imgRes.arrayBuffer()), format: 'png', model };
     }
     throw new Error('OpenAI Images 响应中没有图片数据');
+  }
+
+  /** gpt-image-1 参考图编辑（/images/edits，multipart） */
+  private async edit(prompt: string, model: string, input: ImageGenInput): Promise<ImageGenResult> {
+    const ref = input.referenceImage!;
+    const form = new FormData();
+    form.append('model', model);
+    form.append('prompt', prompt);
+    form.append('size', pickSize(model, input.width, input.height));
+    form.append(
+      'image',
+      new Blob([new Uint8Array(ref.data)], { type: ref.mediaType }),
+      'reference.png',
+    );
+
+    const response = await fetch(`${this.baseUrl}/images/edits`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${this.apiKey}` },
+      body: form,
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`OpenAI Images 编辑失败 (${response.status}): ${text.slice(0, 500)}`);
+    }
+    const data = (await response.json()) as ImagesResponse;
+    const b64 = data.data?.[0]?.b64_json;
+    if (!b64) throw new Error('OpenAI Images 编辑响应中没有图片数据');
+    return { data: Buffer.from(b64, 'base64'), format: 'png', model };
+  }
+
+  async healthCheck(): Promise<ProviderCheckResult> {
+    if (!this.apiKey) return { ok: false, message: '缺少 OPENAI_API_KEY' };
+    try {
+      const { value: res, latencyMs } = await withTiming(() =>
+        fetchWithTimeout(`${this.baseUrl}/models`, {
+          headers: { authorization: `Bearer ${this.apiKey}` },
+        }),
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return { ok: false, message: `鉴权失败 (${res.status}): ${text.slice(0, 200)}`, latencyMs };
+      }
+      return { ok: true, message: `连接正常（${this.baseUrl}）`, latencyMs };
+    } catch (err) {
+      return { ok: false, message: errorMessage(err) };
+    }
   }
 }
 

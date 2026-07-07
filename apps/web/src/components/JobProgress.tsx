@@ -1,9 +1,58 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AssetRecord, Job, JobProgressEvent, JobStatus } from '@gaf/shared';
+import type { AssetRecord, Job, JobProgressEvent, JobStatus, SpritesheetInfo } from '@gaf/shared';
 import { api, subscribeJob } from '../api';
 
 interface Props {
   jobId: string;
+}
+
+export function isAudioAsset(asset: AssetRecord): boolean {
+  return asset.mediaKind === 'audio' || asset.format === 'wav' || asset.format === 'mp3';
+}
+
+/** 精灵表帧序列预览：JS 逐帧循环（兼容任意网格） */
+function SpritesheetPreview({ info }: { info: SpritesheetInfo }) {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setFrame((f) => (f + 1) % info.frameCount), 140);
+    return () => clearInterval(timer);
+  }, [info.frameCount]);
+
+  const maxSide = Math.max(info.frameWidth, info.frameHeight);
+  const scale = Math.min(1, 120 / maxSide);
+  const dw = info.frameWidth * scale;
+  const dh = info.frameHeight * scale;
+  const col = frame % info.columns;
+  const row = Math.floor(frame / info.columns);
+
+  return (
+    <div className="spritesheet-block">
+      <div
+        className="spritesheet-frame"
+        style={{
+          width: dw,
+          height: dh,
+          backgroundImage: `url(/files/${info.fileName})`,
+          backgroundSize: `${info.columns * dw}px ${info.rows * dh}px`,
+          backgroundPosition: `-${col * dw}px -${row * dh}px`,
+        }}
+      />
+      <div className="spritesheet-meta">
+        <span className="muted">
+          {info.frameCount} 帧 · {info.frameWidth}×{info.frameHeight} · {info.columns}×{info.rows}{' '}
+          网格
+        </span>
+        <div className="variant-links">
+          <a href={`/files/${info.fileName}`} download>
+            精灵表 PNG
+          </a>
+          <a href={`/files/${info.jsonFileName}`} download>
+            图集 JSON
+          </a>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const STATUS_LABEL: Record<JobStatus, string> = {
@@ -13,6 +62,7 @@ const STATUS_LABEL: Record<JobStatus, string> = {
   reviewing: '审查中',
   completed: '已完成',
   failed: '失败',
+  canceled: '已取消',
 };
 
 const STAGE_ICON: Record<string, string> = {
@@ -60,16 +110,32 @@ export function JobProgress({ jobId }: Props) {
 
   if (!job) return <div className="loading">连接任务进度…</div>;
 
-  const running = job.status !== 'completed' && job.status !== 'failed';
+  const running =
+    job.status !== 'completed' && job.status !== 'failed' && job.status !== 'canceled';
+
+  const cancel = async () => {
+    try {
+      await api.cancelJob(jobId);
+    } catch {
+      // 任务可能已结束，忽略
+    }
+  };
 
   return (
     <div>
       <div className="progress-header">
         <h2>任务进度</h2>
-        <span className={`status-badge status-${job.status}`}>
-          {running && <span className="spinner" />}
-          {STATUS_LABEL[job.status]}
-        </span>
+        <div className="progress-header-side">
+          {running && (
+            <button className="danger" onClick={cancel}>
+              取消任务
+            </button>
+          )}
+          <span className={`status-badge status-${job.status}`}>
+            {running && <span className="spinner" />}
+            {STATUS_LABEL[job.status]}
+          </span>
+        </div>
       </div>
 
       <div className="progress-list" ref={listRef}>
@@ -82,7 +148,20 @@ export function JobProgress({ jobId }: Props) {
         ))}
       </div>
 
-      {job.error && <div className="alert error">任务失败：{job.error}</div>}
+      {job.error && (
+        <div className={`alert ${job.status === 'canceled' ? '' : 'error'}`}>
+          {job.status === 'canceled' ? '任务已取消' : `任务失败：${job.error}`}
+        </div>
+      )}
+
+      {job.spritesheet && (
+        <>
+          <h3 className="result-title" style={{ margin: '18px 0 10px' }}>
+            精灵表
+          </h3>
+          <SpritesheetPreview info={job.spritesheet} />
+        </>
+      )}
 
       {assets.length > 0 && (
         <>
@@ -95,9 +174,16 @@ export function JobProgress({ jobId }: Props) {
           <div className="asset-grid">
             {assets.map((asset) => (
               <div key={asset.id} className="asset-card">
-                <a href={`/files/${asset.fileName}`} target="_blank" rel="noreferrer">
-                  <img src={`/files/${asset.fileName}`} alt={asset.name} loading="lazy" />
-                </a>
+                {isAudioAsset(asset) ? (
+                  <div className="audio-thumb">
+                    <span className="audio-icon">🎧</span>
+                    <audio controls preload="none" src={`/files/${asset.fileName}`} />
+                  </div>
+                ) : (
+                  <a href={`/files/${asset.fileName}`} target="_blank" rel="noreferrer">
+                    <img src={`/files/${asset.fileName}`} alt={asset.name} loading="lazy" />
+                  </a>
+                )}
                 <div className="asset-meta">
                   <strong>{asset.name}</strong>
                   <span className="muted">

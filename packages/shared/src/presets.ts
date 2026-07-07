@@ -1,4 +1,4 @@
-import type { AssetType } from './types.js';
+import type { AudioAssetType, ImageAssetType } from './types.js';
 
 /** 美术风格预设：提示词关键词 + 负向词，供提示词工程师智能体使用 */
 export interface StylePreset {
@@ -96,7 +96,7 @@ export interface AssetTypeMeta {
   defaultSize: { width: number; height: number };
 }
 
-export const ASSET_TYPE_META: Record<AssetType, AssetTypeMeta> = {
+export const ASSET_TYPE_META: Record<ImageAssetType, AssetTypeMeta> = {
   sprite: {
     label: '角色 / 物体精灵',
     labelEn: 'Sprite',
@@ -147,4 +147,30 @@ export const ASSET_TYPE_META: Record<AssetType, AssetTypeMeta> = {
   },
 };
 
-export const ASSET_TYPES = Object.keys(ASSET_TYPE_META) as AssetType[];
+export const ASSET_TYPES = Object.keys(ASSET_TYPE_META) as ImageAssetType[];
+
+/** 音频素材类型展示信息 + 面向音频模型的描述模板 */
+export interface AudioTypeMeta {
+  label: string;
+  labelEn: string;
+  /** {desc} 会被替换为音效描述 */
+  promptTemplate: string;
+  defaultDuration: number;
+}
+
+export const AUDIO_TYPE_META: Record<AudioAssetType, AudioTypeMeta> = {
+  sfx: {
+    label: '音效',
+    labelEn: 'Sound Effect',
+    promptTemplate: 'game sound effect: {desc}, clean, punchy, no music',
+    defaultDuration: 2,
+  },
+  bgm: {
+    label: '背景音乐',
+    labelEn: 'Background Music',
+    promptTemplate: 'looping game background music: {desc}, seamless loop, instrumental',
+    defaultDuration: 15,
+  },
+};
+
+export const AUDIO_TYPES = Object.keys(AUDIO_TYPE_META) as AudioAssetType[];

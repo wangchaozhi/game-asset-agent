@@ -1,4 +1,14 @@
-import type { AssetType, ProviderInfo } from '@gaf/shared';
+import type { AssetType, ProviderCheckResult, ProviderInfo } from '@gaf/shared';
+
+/** 参考图（image-to-image / 风格参照），供支持的 Provider 使用 */
+export interface ReferenceImage {
+  /** 图像二进制 */
+  data: Buffer;
+  /** MIME，如 image/png */
+  mediaType: string;
+  /** img2img 去噪强度（0-1，越大越偏离原图），Provider 自行取舍默认值 */
+  strength?: number;
+}
 
 /** 图像生成的统一输入 */
 export interface ImageGenInput {
@@ -10,6 +20,8 @@ export interface ImageGenInput {
   assetType?: AssetType;
   /** 稳定复现用的随机种子（支持的 Provider 才生效） */
   seed?: number;
+  /** 参考图输入：有能力的 Provider 走 img2img，无能力的忽略 */
+  referenceImage?: ReferenceImage;
 }
 
 export interface ImageGenResult {
@@ -33,9 +45,22 @@ export interface ImageProvider {
   readonly supportsNegativePrompt: boolean;
   readonly outputFormat: string;
   readonly note?: string;
+  /** 是否支持参考图（img2img / 风格参照） */
+  readonly supportsReferenceImage?: boolean;
+  /** 提示词首选语言：部分国内模型中文效果更佳，提示词工程师据此决定输出语言 */
+  readonly preferredPromptLanguage?: 'en' | 'zh';
   isConfigured(): boolean;
-  generate(input: ImageGenInput, model?: string): Promise<ImageGenResult>;
+  generate(
+    input: ImageGenInput,
+    model?: string,
+    onProgress?: ProgressReporter,
+  ): Promise<ImageGenResult>;
+  /** 连通性检查（本地 SD WebUI / ComfyUI 尤其需要）；未实现时由路由降级为配置态判断 */
+  healthCheck?(): Promise<ProviderCheckResult>;
 }
+
+/** 生成过程中的中间进度回报（如 ComfyUI 节点进度、异步轮询状态） */
+export type ProgressReporter = (message: string) => void;
 
 export function toProviderInfo(provider: ImageProvider): ProviderInfo {
   return {
@@ -48,5 +73,8 @@ export function toProviderInfo(provider: ImageProvider): ProviderInfo {
     supportsNegativePrompt: provider.supportsNegativePrompt,
     outputFormat: provider.outputFormat,
     note: provider.note,
+    supportsReferenceImage: Boolean(provider.supportsReferenceImage),
+    preferredPromptLanguage: provider.preferredPromptLanguage ?? 'en',
+    supportsHealthCheck: typeof provider.healthCheck === 'function',
   };
 }

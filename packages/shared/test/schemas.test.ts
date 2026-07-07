@@ -56,6 +56,51 @@ describe('createJobSchema', () => {
     });
     expect(parsed.postprocess).toEqual({ variants: [0.5], format: 'webp' });
   });
+
+  it('accepts audio jobs with sfx/bgm asset types', () => {
+    const parsed = createJobSchema.parse({
+      brief: '金属剑刃挥砍声',
+      kind: 'audio',
+      assetType: 'sfx',
+      style: 'game-audio',
+      provider: 'mock-audio',
+      durationSeconds: 2,
+    });
+    expect(parsed.kind).toBe('audio');
+    expect(parsed.assetType).toBe('sfx');
+  });
+
+  it('rejects audio kind with an image asset type', () => {
+    const result = createJobSchema.safeParse({
+      brief: '金属剑刃挥砍声',
+      kind: 'audio',
+      assetType: 'sprite',
+      style: 'game-audio',
+      provider: 'mock-audio',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects image kind with an audio asset type', () => {
+    const result = createJobSchema.safeParse({
+      brief: '一把火焰魔法剑',
+      kind: 'image',
+      assetType: 'bgm',
+      style: 'pixel-art',
+      provider: 'mock',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('defaults kind to image', () => {
+    const parsed = createJobSchema.parse({
+      brief: '一把火焰魔法剑',
+      assetType: 'icon',
+      style: 'pixel-art',
+      provider: 'mock',
+    });
+    expect(parsed.kind).toBe('image');
+  });
 });
 
 describe('presets', () => {
